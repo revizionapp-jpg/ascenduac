@@ -1,0 +1,106 @@
+// Prisma Schema - AscendUAC
+// Base de donnees : Prisma Postgres (db.prisma.io)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── NextAuth.js Tables ────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  evaluations   Evaluation[]
+
+  @@map("user")
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@map("account")
+}
+
+model Session {
+  sessionToken String   @id
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+  @@map("verificationToken")
+}
+
+// ── Suivi des Notes ───────────────────────────────────────────────────────────
+
+model Ue {
+  code        String       @id @db.VarChar(10)  // ex: MBH1101
+  name        String
+  credits     Int          @default(3)
+  semester    String       // "1" ou "2"
+  type        String       @default("fondamentale")
+  ecus        Ecu[]
+  evaluations Evaluation[]
+
+  @@map("ues")
+}
+
+model Ecu {
+  id          Int          @id @default(autoincrement())
+  name        String
+  ueCode      String       @db.VarChar(10) @map("ue_code")
+  ue          Ue           @relation(fields: [ueCode], references: [code], onDelete: Cascade)
+  evaluations Evaluation[]
+
+  // Contrainte stricte : exactement ecu.length lignes par UE (jamais basé sur credits)
+  @@unique([ueCode, name], name: "uq_ecus_ue_name")
+  @@map("ecus")
+}
+
+model Evaluation {
+  id            Int      @id @default(autoincrement())
+  studentId     String   @map("student_id")
+  ueCode        String?  @db.VarChar(10) @map("ue_code")   // Evaluation globale UE (sans ECU)
+  ecuId         Int?     @map("ecu_id")                    // Evaluation au niveau ECU (optionnel)
+  type          String   // "CC" ou "ET"
+  grade         Float?
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  student       User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  ue            Ue?      @relation(fields: [ueCode], references: [code], onDelete: Cascade)
+  ecu           Ecu?     @relation(fields: [ecuId], references: [id], onDelete: Cascade)
+
+  // Unicité : un étudiant ne peut avoir qu'une note CC et une note ET par ECU ou par UE (directe)
+  @@unique([studentId, ecuId, type], name: "student_ecu_type_unique")
+  @@map("evaluations")
+}
